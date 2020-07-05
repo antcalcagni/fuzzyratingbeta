@@ -1,5 +1,5 @@
 rm(list=ls());graphics.off()
-setwd("/home/antonio/MEGA/Lavoro_sync/My papers/Submitted/Modeling random and non-random uncertainty in ratings data_A fuzzy beta model/code_paper/")
+#setwd("/home/...")
 source("fuzzybetareg.R")
 
 ##### Simulation study #####
