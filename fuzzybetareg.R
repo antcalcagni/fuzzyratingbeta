@@ -5,6 +5,12 @@ beta_fn = function(x,mi,gi){
   return(fx)
 }
 
+tpzfun = function(x,a,b,c,d){
+  mux=trapezoid::dtrapezoid(x=x,min=a,max=d,mode1=b,mode2=c)
+  mux=mux/max(mux)
+  return(mux)
+}
+
 defuzzify_centroid = function(mi,si,what=c("mean","mode")){
   a1 = 1+si*mi; b1 = 1+si*(1-mi) 
   if(what=="mean"){(a1)/(a1+b1)}
@@ -187,6 +193,55 @@ LRtest_fuzzybetareg = function(formula1,formula0,data,use.optim=FALSE,init="rand
   
 }
 
+PseudoR2 = function(formula=NULL,data=NULL,use.optim=FALSE,init="random"){
+  
+  fu=unlist(strsplit(x=unlist(strsplit(x=formula,split="~"))[1],split=","))
+  if(length(fu)>1){ #fuzzy-betareg
+    ## m1
+    out1 = fuzzybetareg_fit(formula,data,verbose = FALSE,use.optim = use.optim,init=init)
+    ll1 = out1$loglikel
+    ## m0 (model with a constant only)
+    fm0 = paste0(unlist(strsplit(x=formula,split="~"))[1],"~1|1")
+    out0 = fuzzybetareg_fit(fm0,data,verbose = FALSE,use.optim = use.optim,init=init)
+    ll0 = out0$loglikel
+  }else{ #crisp-betareg
+    ## m1
+    out1 = betareg::betareg(formula,data)
+    ll1 = out1$loglik
+    ## m0 (model with a constant only)
+    fm0 = paste0(unlist(strsplit(x=formula,split="~"))[1],"~1|1")
+    out0 = betareg::betareg(fm0,data)
+    ll0 = out0$loglik
+  }
+  
+  ## LRT-based pseudoR2 (e.g., see: Veall, M. R., & Zimmermann, K. F. (1994). Evaluating Pseudo-R 2's for binary probit models. Quality and Quantity, 28(2), 151-164.)
+  n = NROW(data)
+  lrt = 2*(ll1-ll0)
+  rs = 2*ll0/n
+  pr2 = (-lrt*(1-rs))/(rs*(lrt+n))
+  
+  return(pr2)
+}
+
+predictive_check = function(B=5000,model=NULL,Ydata=NULL,seedx=NULL,alphax=0.01){
+  if(!is.null(seedx)){set.seed(seedx)}
+  
+  n=NROW(Ydata)
+  mux=model$fitted.values$mean
+  phix=model$fitted.values$precision
+  Yhat = t(mapply(function(i)rbeta(B,mux[i]*phix[i],phix[i]*(1-mux[i])),1:n))
+  
+  xsup=seq(0,1,length.out = 500)
+  Fy_0 = t(mapply(function(i){
+    fy=beta_fn(x = xsup,mi = Ydata[i,1],gi = Ydata[i,2])
+    return(c(min(xsup[fy>alphax]),max(xsup[fy>alphax])))
+    },1:n))
+  
+  yhat_fy = mapply(function(i)sum(Yhat[i,]>=Fy_0[i,1]&Yhat[i,]<=Fy_0[i,2])/B,1:n)
+  return(list(fit_i=yhat_fy,fit_ov=mean(yhat_fy),Ypredict=Yhat,Yobs_alpha=Fy_0))
+}
+
+
 AIC_fuzzybetareg = function(X,Z,m,s,beta_par,gamma_par){
   mux = plogis(X%*%beta_par); phix = exp(Z%*%gamma_par)
   ll = sum(mapply(function(i)log(integrate(function(x)beta_fn(x,m[i],s[i])*dbeta(x,mux[i]*phix[i],phix[i]*(1-mux[i])),0,1)$value),1:length(m)))
@@ -273,4 +328,13 @@ modelframe_fuzzybetareg = function(formula,data){
     Z = model.matrix(as.formula(paste0("~",paste(ones,collapse="+"))),data=data)
   }
   return(list(X=X,Z=Z,s=s,m=m))
+}
+
+add_legend = function(...) {
+  #From: https://stackoverflow.com/questions/3932038/plot-a-legend-outside-of-the-plotting-area-in-base-graphics
+  opar <- par(fig=c(0, 1, 0, 1), oma=c(0, 0, 0, 0), 
+              mar=c(0, 0, 0, 0), new=TRUE)
+  on.exit(par(opar))
+  plot(0, 0, type='n', bty='n', xaxt='n', yaxt='n')
+  legend(...)
 }
